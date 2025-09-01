@@ -1,23 +1,85 @@
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use crate::U256;
 use crate::crypto::{PublicKey, Signature};
+use crate::error::{BtcError, Result};
 use crate::sha256::Hash;
 use crate::util::MerkleRoot;
-use crate::U256;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Blockchain {
+    pub utxos: HashMap<Hash, TransactionOutput>,
     pub blocks: Vec<Block>,
 }
 
 impl Blockchain {
     pub fn new() -> Self {
-        Blockchain { blocks: vec![] }
+        Blockchain {
+            utxos: HashMap::new(),
+            blocks: vec![],
+        }
     }
 
-    pub fn add_block(&mut self, block: Block) {
+    pub fn add_block(&mut self, block: Block) -> Result<()> {
+        if self.blocks.is_empty() {
+            // if is the first block, check if the block's
+            // prev_block_hash is all zeros
+            if block.header.prev_block_hash != Hash::zero() {
+                println!("zero hash");
+                return Err(BtcError::InvalidBlock);
+            }
+        } else {
+            // is this is not the first block, check if the
+            // block's prev_block_hash os the hash of the
+            // last block
+            let last_block = self.blocks.last().unwrap();
+            if block.header.prev_block_hash != last_block.hash() {
+                println!("prev hash is wrong");
+                return Err(BtcError::InvalidBlock);
+            }
+
+            // check if the block's hash is less than the target
+            if !block.header.hash().matches_target(block.header.target) {
+                println!("does not match target");
+                return Err(BtcError::InvalidBlock);
+            }
+
+            // check if the block's merkle root is correct
+            let calcualted_merkle_root = MerkleRoot::calculate(&block.transactions);
+            if calcualted_merkle_root != block.header.merkle_root {
+                println!("invalid merkle root");
+                return Err(BtcError::InvalidMerkleRoot);
+            }
+
+            // check if the block's timestamp is after the
+            // last block's timestamp
+            if block.header.timestamp <= last_block.header.timestamp {
+                return Err(BtcError::InvalidBlock);
+            }
+
+            block.verify_transactions(self.block_height(), &self.utxos);
+        }
         self.blocks.push(block);
+        Ok(())
+    }
+
+    pub fn block_height(&self) -> u64 {
+        self.blocks.len() as u64
+    }
+
+    pub fn rebuild_utxos(&mut self) {
+        for block in &self.blocks {
+            for transaction in &block.transactions {
+                for input in &transaction.inputs {
+                    self.utxos.remove(&input.prev_transaction_output_hash);
+                }
+                for output in transaction.outputs.iter() {
+                    self.utxos.insert(output.hash(), output.clone());
+                }
+            }
+        }
     }
 }
 
@@ -74,6 +136,11 @@ impl Block {
     pub fn hash(&self) -> Hash {
         Hash::hash(self)
     }
+
+    // TODO:
+    pub fn verify_transactions(&self, block_height: u64, utxos: &HashMap<Hash, TransactionOutput>) {
+        let mut inputs: HashMap<Hash, TransactionOutput> = HashMap::new();
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -105,7 +172,7 @@ impl Transaction {
     pub fn new(inputs: Vec<TransactionInput>, outputs: Vec<TransactionOutput>) -> Self {
         Transaction { inputs, outputs }
     }
-    pub fn hash(&self) -> ! {
-        unimplemented!()
+    pub fn hash(&self) -> Hash {
+        Hash::hash(self)
     }
 }

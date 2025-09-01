@@ -9,7 +9,7 @@ impl fmt::Display for Hash {
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
 pub struct Hash(U256);
 impl Hash {
     // hash anything that can be serde Serialized
@@ -34,6 +34,10 @@ impl Hash {
     // zero hash
     pub fn zero() -> Self {
         Hash(U256::zero())
+    }
+
+    pub fn as_bytes(&self) -> [u8; 32] {
+        self.0.to_little_endian()
     }
 }
 
