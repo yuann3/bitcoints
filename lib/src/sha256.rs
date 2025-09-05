@@ -16,7 +16,7 @@ impl Hash {
     pub fn hash<T: serde::Serialize>(data: &T) -> Self {
         let mut serialized: Vec<u8> = vec![];
         if let Err(e) = ciborium::into_writer(data, &mut serialized) {
-            panic!("Failed to serialize data: {:?}. This should not happen", e);
+            panic!("Failed to serialize data: {e:?}. This should not happen");
         }
         let hash = digest(&serialized);
         let hash_bytes = hex::decode(hash).unwrap();
