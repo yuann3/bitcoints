@@ -34,5 +34,4 @@ fn main() {
     // print mined block and hash
     println!("final: {:#?}", block);
     println!("hash: {}", block.header.hash());
-
 }
