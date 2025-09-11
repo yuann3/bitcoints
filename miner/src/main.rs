@@ -1,37 +1,14 @@
-use std::process::exit;
-use std::{env, usize};
-use btclib::types::Block;
-use btclib::util::Saveable;
+pub fn add(left: u64, right: u64) -> u64 {
+    left + right
+}
 
-fn main() {
-    let (path, steps) = if let (Some(arg), Some(arg2)) = (env::args().nth(1), env::args().nth(2)) {
-        (arg, arg2)
-    } else {
-        eprintln!("Usage: miner <block_file> <steps>");
-        exit(1);
-    };
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let steps: usize = if let Ok(s @ 1..=usize::MAX) = steps.parse() {
-        s
-    } else {
-        eprintln!("<steps> should be a positive integer");
-        exit(1);
-    };
-
-    // load block from file
-    let og_block = Block::load_from_file(path).expect("Failed to load block");
-    let mut block = og_block.clone();
-
-    // mine
-    while !block.header.mine(steps) {
-        println!("mining.....");
+    #[test]
+    fn it_works() {
+        let result = add(2, 2);
+        assert_eq!(result, 4);
     }
-
-    // print original block and hash
-    println!("original: {:#?}", og_block);
-    println!("hash: {}", og_block.header.hash());
-
-    // print mined block and hash
-    println!("final: {:#?}", block);
-    println!("hash: {}", block.header.hash());
 }
