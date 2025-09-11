@@ -1,14 +1,31 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+use btclib::crypto::PublicKey;
+use btclib::network::Message;
+use btclib::util::Saveable;
+use std::env;
+use std::process::exit;
+use tokio::net::TcpStream;
+
+fn usage() -> ! {
+    eprintln!("Usage: {} <address> <public_key_file>", env::args().next().unwrap());
+    exit(1);
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[tokio::main]
+async fn main() {
+    let address = match env::args().nth(1) {
+        Some(address) => address,
+        None => usage(),
+    };
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+    let public_key_file = match env::args().nth(2) {
+        Some(public_key_file) => public_key_file,
+        None => usage(),
+    };
+
+    let Ok(public_key) = PublicKey::load_from_file(&public_key_file) else {
+        eprint!("Error reading public key from file {}", public_key_file);
+        exit(1);
+    };
+
+    println!("Connecting to {address} to mine with {public_key:?}");
 }
