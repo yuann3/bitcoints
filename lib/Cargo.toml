@@ -15,5 +15,6 @@ serde = { version = "1.0.219", features = ["derive"] }
 sha256 = "1.6.0"
 spki = "0.7.3"
 thiserror = "2.0.16"
+tokio = "1.47.1"
 uint = "0.10.0"
 uuid = { version = "1.18.0", features = ["v4", "serde"] }

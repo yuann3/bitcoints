@@ -1,17 +1,16 @@
 use crate::sha256::Hash;
+use crate::util::Saveable;
 use ecdsa::signature::{Signer, Verifier};
 use ecdsa::{Signature as ECDSASignature, SigningKey, VerifyingKey};
 use k256::Secp256k1;
 use serde::{Deserialize, Serialize};
 use spki::EncodePublicKey;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result as IoResult, Write};
-use crate::util::Saveable;
 
 impl Saveable for PrivateKey {
     fn load<I: Read>(reader: I) -> IoResult<Self> {
-        ciborium::de::from_reader(reader).map_err(|_| {
-            IoError::new(IoErrorKind::InvalidData, "Failed to deserialize PrivateKey")
-        })
+        ciborium::de::from_reader(reader)
+            .map_err(|_| IoError::new(IoErrorKind::InvalidData, "Failed to deserialize PrivateKey"))
     }
 
     fn save<O: Write>(&self, writer: O) -> IoResult<()> {
@@ -29,10 +28,19 @@ impl Saveable for PublicKey {
         reader.read_to_string(&mut buf)?;
 
         // decode the public key from PEM
-        let public_key = buf.parse().map_err(|_| {
-            IoError::new(IoErrorKind::InvalidData, "Failed to parse PublicKey")
-        })?;
+        let public_key = buf
+            .parse()
+            .map_err(|_| IoError::new(IoErrorKind::InvalidData, "Failed to parse PublicKey"))?;
         Ok(PublicKey(public_key))
+    }
+
+    fn save<O: Write>(&self, mut writer: O) -> IoResult<()> {
+        let s = self
+            .0
+            .to_public_key_pem(Default::default())
+            .map_err(|_| IoError::new(IoErrorKind::InvalidData, "Failed to serialize PublicKey"))?;
+        writer.write_all(s.as_bytes())?;
+        Ok(())
     }
 }
 

@@ -1,7 +1,7 @@
-use std::process::exit;
-use std::{env, usize};
 use btclib::types::Block;
 use btclib::util::Saveable;
+use std::process::exit;
+use std::{env, usize};
 
 fn main() {
     let (path, steps) = if let (Some(arg), Some(arg2)) = (env::args().nth(1), env::args().nth(2)) {
