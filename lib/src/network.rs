@@ -1,6 +1,5 @@
 use crate::crypto::PublicKey;
 use crate::types::{Block, Transaction, TransactionOutput};
-use ciborium::value::Error;
 use serde::{Deserialize, Serialize};
 use std::io::{Error as IoError, Read, Write};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};

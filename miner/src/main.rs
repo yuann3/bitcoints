@@ -4,9 +4,10 @@ use btclib::network::Message;
 use btclib::types::Block;
 use btclib::util::Saveable;
 use clap::Parser;
-use std::{intrinsics::nontemporal_store, sync::{
-    atomic::{AtomicBool, Ordering}, Arc
-}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::thread;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
@@ -34,7 +35,7 @@ impl Miner {
     async fn new(address: String, public_key: PublicKey) -> Result<Self> {
         let stream = TcpStream::connect(&address).await?;
         let (mined_block_sender, mined_block_receiver) = flume::unbounded();
-        Ok( Self {
+        Ok(Self {
             public_key,
             stream: Mutex::new(stream),
             current_template: Arc::new(std::sync::Mutex::new(None)),
@@ -64,10 +65,10 @@ impl Miner {
         let template = self.current_template.clone();
         let mining = self.mining.clone();
         let sender = self.mined_block_sender.clone();
-        thread::spawn(move || loop {
-            if mining.load(Ordering::Relaxed) {
-                if let Some(mut block) =
-                    template.lock().unwrap().clone() {
+        thread::spawn(move || {
+            loop {
+                if mining.load(Ordering::Relaxed) {
+                    if let Some(mut block) = template.lock().unwrap().clone() {
                         println!("Mining block with target: {}", block.header.target);
                         if block.header.mine(2_000_000) {
                             println!("Block mined: {}", block.hash());
@@ -75,8 +76,9 @@ impl Miner {
                             mining.store(false, Ordering::Relaxed);
                         }
                     }
+                }
+                thread::yield_now();
             }
-            thread::yield_now();
         })
     }
 
@@ -93,15 +95,58 @@ impl Miner {
         println!("Fetching new template");
         let message = Message::FetchTemplate(self.public_key.clone());
         let mut stream_lock = self.stream.lock().await;
-        message.send_async()
+        message.send_async(&mut *stream_lock).await?;
+        drop(stream_lock);
+        let mut stream_lock = self.stream.lock().await;
+        match Message::receive_async(&mut *stream_lock).await? {
+            Message::Template(template) => {
+                drop(stream_lock);
+                println!(
+                    "Recevied new template with target: {}",
+                    template.header.target
+                );
+                *self.current_template.lock().unwrap() = Some(template);
+                self.mining.store(true, Ordering::Relaxed);
+                Ok(())
+            }
+            _ => Err(anyhow!(
+                "Unexpected message recevied when fetching template"
+            )),
+        }
     }
 
     async fn validate_template(&self) -> Result<()> {
-        unimplemented!()
+        if let Some(template) = self.current_template.lock().unwrap().clone() {
+            let message = Message::ValidateTemplate(template);
+            let mut stream_lock = self.stream.lock().await;
+            message.send_async(&mut *stream_lock).await?;
+            drop(stream_lock);
+            let mut stream_lock = self.stream.lock().await;
+            match Message::receive_async(&mut *stream_lock).await? {
+                Message::TemplateValidity(valid) => {
+                    drop(stream_lock);
+                    if !valid {
+                        println!("Current telmplate is no longer valid");
+                        self.mining.store(false, Ordering::Relaxed);
+                    } else {
+                        println!("Current template is still valid");
+                    }
+                    Ok(())
+                }
+                _ => Err(anyhow!("Unexpected mesage recevied when validating template"))
+            }
+        } else {
+            Ok(())
+        }
     }
 
     async fn submit_block(&self, block: Block) -> Result<()> {
-        unimplemented!()
+        println!("Submitting mined block");
+        let message = Message::SubmitTemplate(block);
+        let mut stream_lock = self.stream.lock().await;
+        message.send_async(&mut *stream_lock).await?;
+        self.mining.store(false, Ordering::Relaxed);
+        Ok(())
     }
 }
 
