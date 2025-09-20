@@ -3,6 +3,7 @@ use btclib::network::Message;
 use btclib::types::Blockchain;
 use btclib::util::Saveable;
 use tokio::net::TcpStream;
+use tokio::time;
 
 pub async fn load_blockchain(blockchain_file: &str) -> Result<()> {
     println!("blockchain file exists, loading...");
@@ -52,7 +53,10 @@ pub async fn find_longest_chain_node() -> Result<(String, u32)> {
     println!("finding nodes with the highest blockchain length...");
     let mut longest_name = String::new();
     let mut longest_count = 0;
-    let all_nodes = crate::NODES.iter().map(|x| x.key().clone()).collect::<Vec<_>>();
+    let all_nodes = crate::NODES
+        .iter()
+        .map(|x| x.key().clone())
+        .collect::<Vec<_>>();
 
     for node in all_nodes {
         println!("asking {} for blockchain length", node);
@@ -95,4 +99,24 @@ pub async fn download_blockchain(node: &str, count: u32) -> Result<()> {
         }
     }
     Ok(())
+}
+
+pub async fn cleanup() {
+    let mut interval = time::interval(time::Duration::from_secs(30));
+    loop {
+        interval.tick().await;
+        println!("cleaning the mempool from old transactions");
+        let mut blockchain = crate::BLOCKCHAIN.write().await;
+        blockchain.cleanup_mempool();
+    }
+}
+
+pub async fn save(name: String) {
+    let mut interval = time::interval(time::Duration::from_secs(15));
+    loop {
+        interval.tick().await;
+        println!("saving blockchain to derive...");
+        let blockchain = crate::BLOCKCHAIN.read().await;
+        blockchain.save_to_file(name.clone()).unwrap();
+    }
 }
