@@ -1,14 +1,13 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+use anyhow::Result;
+use clap::{Parser, Subcommand};
+use kanal::bounded;
+use tokio::time::{self, Duration};
+use std::io::{self, Write};
+use std::path::PathBuf;
+use btclib::types::Transaction;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+mod core;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+fn main() {
+    println!("ho");
 }

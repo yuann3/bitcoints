@@ -1,7 +1,6 @@
-use btclib::crypto::PublicKey;
 use btclib::network::Message;
 use btclib::sha256::Hash;
-use btclib::types::{Block, BlockHeader, Blockchain, Transaction, TransactionOutput};
+use btclib::types::{Block, BlockHeader, Transaction, TransactionOutput};
 use btclib::util::MerkleRoot;
 use chrono::Utc;
 use tokio::net::TcpStream;
