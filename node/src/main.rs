@@ -45,7 +45,6 @@ async fn main() -> Result<()> {
         util::populate_connections(&nodes).await?;
         println!("total amount of known nodes: {}", NODES.len());
         if nodes.is_empty() {
-
             println!("no initial nodes provided, starting as a seed node");
         } else {
             let (longest_time, longest_count) = util::find_longest_chain_node().await?;
@@ -64,6 +63,9 @@ async fn main() -> Result<()> {
         }
     }
 
+    tokio::spawn(util::cleanup());
+    tokio::spawn(util::save(blockchain_file.clone()));
+
     // start the tcp listener on 0.0.0.0:port
     let addr = format!("0.0.0.0:{}", port);
     let listener = TcpListener::bind(&addr).await?;
@@ -72,5 +74,4 @@ async fn main() -> Result<()> {
         let (socket, _) = listener.accept().await?;
         tokio::spawn(handler::handle_connection(socket));
     }
-    Ok(())
 }

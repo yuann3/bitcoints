@@ -1,3 +1,4 @@
+use btclib::crypto::PublicKey;
 use btclib::network::Message;
 use btclib::sha256::Hash;
 use btclib::types::{Block, BlockHeader, Blockchain, Transaction, TransactionOutput};
@@ -91,6 +92,79 @@ pub async fn handle_connection(mut socket: TcpStream) {
                         }
                     }
                 }
+            }
+            SubmitTransaction(tx) => {
+                println!("submit tx");
+                let mut blockchain = crate::BLOCKCHAIN.write().await;
+                if let Err(e) = blockchain.add_to_mempool(tx.clone()) {
+                    println!("transaction rejected, closing connection: {e}");
+                    return;
+                }
+                println!("added transaction to mempool");
+                let nodes = crate::NODES
+                    .iter()
+                    .map(|x| x.key().clone())
+                    .collect::<Vec<_>>();
+                for node in nodes {
+                    if let Some(mut stream) = crate::NODES.get_mut(&node) {
+                        let message = Message::NewTransaction(tx.clone());
+                        if message.send_async(&mut *stream).await.is_err() {
+                            println!("failed to send transaction to {}", node);
+                        }
+                    }
+                }
+                println!("transaction sent to friends");
+            }
+            FetchTemplate(pubkey) => {
+                let blockchain = crate::BLOCKCHAIN.read().await;
+                let mut transactions = vec![];
+                transactions.extend(
+                    blockchain
+                        .mempool()
+                        .iter()
+                        .take(btclib::BLOCK_TRANSACTION_CAP)
+                        .map(|(_, tx)| tx)
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                );
+                transactions.insert(
+                    0,
+                    Transaction {
+                        inputs: vec![],
+                        outputs: vec![TransactionOutput {
+                            pubkey,
+                            unique_id: Uuid::new_v4(),
+                            value: 0,
+                        }],
+                    },
+                );
+                let merkle_root = MerkleRoot::calculate(&transactions);
+                let mut block = Block::new(
+                    BlockHeader {
+                        timestamp: Utc::now(),
+                        prev_block_hash: blockchain
+                            .blocks()
+                            .last()
+                            .map(|last_block| last_block.hash())
+                            .unwrap_or(Hash::zero()),
+                        nonce: 0,
+                        target: blockchain.target(),
+                        merkle_root,
+                    },
+                    transactions,
+                );
+                let miner_fees = match block.calculate_miner_fees(blockchain.utxos()) {
+                    Ok(fees) => fees,
+                    Err(e) => {
+                        eprintln!("{e}");
+                        return;
+                    }
+                };
+                let reward = blockchain.calculate_block_reward();
+                block.transactions[0].outputs[0].value = reward + miner_fees;
+                block.header.merkle_root = MerkleRoot::calculate(&block.transactions);
+                let message = Template(block);
+                message.send_async(&mut socket).await.unwrap();
             }
             _ => todo!(),
         }
