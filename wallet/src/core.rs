@@ -4,11 +4,13 @@ use btclib::network::Message;
 use btclib::types::{Transaction, TransactionOutput};
 use btclib::util::Saveable;
 use crossbeam_skiplist::SkipMap;
+use kanal::AsyncSender;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::TcpStream;
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Key {
     public: PathBuf,
@@ -61,4 +63,47 @@ pub struct Config {
     pub contacts: Vec<Recipient>,
     pub default_node: String,
     pub fee_config: FeeConfig,
+}
+
+#[derive(Clone)]
+struct UtxoStore {
+    my_keys: Vec<LoadedKey>,
+    utxos: Arc<SkipMap<PublicKey, Vec<(bool, TransactionOutput)>>>,
+}
+
+impl UtxoStore {
+    fn new() -> Self {
+        UtxoStore {
+            my_keys: Vec::new(),
+            utxos: Arc::new(SkipMap::new()),
+        }
+    }
+
+    fn add_key(&mut self, key: LoadedKey) {
+        self.my_keys.push(key);
+    }
+}
+
+#[derive(Clone)]
+pub struct Core {
+    pub config: Config,
+    utxos: UtxoStore,
+    pub tx_sender: AsyncSender<Transaction>,
+}
+
+impl Core {
+    fn new(config: Config, utxos: UtxoStore) -> Self {
+        let (tx_sender, _) = kanal::bounded(10);
+        Core {
+            config,
+            utxos,
+            tx_sender: tx_sender.clone_async(),
+        }
+    }
+
+    pub fn load(config_path: PathBuf) -> Result<Self> {
+        let config: Config = toml::from_str(&fs::read_to_string(&config_path)?)?;
+        let mut utxos = UtxoStore::new();
+        unimplemented!();
+    }
 }
