@@ -1,4 +1,3 @@
-use crate::util::generate_dummy_config;
 use anyhow::Result;
 use btclib::types::Transaction;
 use clap::{Parser, Subcommand};
@@ -6,8 +5,10 @@ use core::{Config, Core, FeeConfig, FeeType, Recipient};
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
+use task::{handle_transactions, ui_task, update_balance, update_utxos};
 use tokio::time::{self, Duration};
-use tracing::*;
+use tracing::{debug, info};
+use util::{big_mode_btc, generate_dummy_config, setup_panic_hook, setup_tracing};
 
 mod core;
 mod task;

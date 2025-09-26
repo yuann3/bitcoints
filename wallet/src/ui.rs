@@ -89,6 +89,7 @@ fn send_transaction(s: &mut Cursive, core: Arc<Core>, unit: Unit) {
         Err(e) => show_error_dialog(s, e),
     }
 }
+
 fn show_success_dialog(s: &mut Cursive) {
     info!("Transaction sent successfully");
     s.add_layer(
@@ -100,4 +101,82 @@ fn show_success_dialog(s: &mut Cursive) {
                 s.pop_layer();
             }),
     );
+}
+
+fn show_error_dialog(s: &mut Cursive, error: impl std::fmt::Display) {
+    error!("Failed to send transaction: {}", error);
+    s.add_layer(
+        Dialog::text(format!("Failed to send transaction: {}", error))
+            .title("Error")
+            .button("OK", |s| {
+                debug!("Closing error dialog");
+                s.pop_layer();
+            }),
+    );
+}
+
+fn create_transaction_layout(unit: Arc<Mutex<Unit>>) -> LinearLayout {
+    LinearLayout::vertical()
+        .child(TextView::new("Recipient:"))
+        .child(EditView::new().with_name("recipient"))
+        .child(TextView::new("Amount:"))
+        .child(EditView::new().with_name("amount"))
+        .child(create_unit_layout(unit))
+}
+
+fn create_unit_layout(unit: Arc<Mutex<Unit>>) -> LinearLayout {
+    LinearLayout::horizontal()
+        .child(TextView::new("Unit: "))
+        .child(TextView::new_with_content(TextContent::new("BTC")).with_name("unit_display"))
+        .child(Button::new("Switch", move |s| switch_unit(s, unit.clone())))
+}
+
+fn switch_unit(s: &mut Cursive, unit: Arc<Mutex<Unit>>) {
+    let mut unit = unit.lock().unwrap();
+    *unit = match *unit {
+        Unit::Btc => Unit::Sats,
+        Unit::Sats => Unit::Btc,
+    };
+    s.call_on_name("unit_display", |view: &mut TextView| {
+        view.set_content(match *unit {
+            Unit::Btc => "BTC",
+            Unit::Sats => "Sats",
+        });
+    });
+}
+
+fn setup_layout(siv: &mut Cursive, core: Arc<Core>, balance_content: TextContent) {
+    let instruction = TextView::new("Press Escape to select the top menu");
+    let balance_panel = Panel::new(TextView::new_with_content(balance_content)).title("Balance");
+    let info_layout = create_info_layout(&core);
+    let layout = LinearLayout::vertical()
+        .child(instruction)
+        .child(balance_content)
+        .child(info_layout);
+    siv.add_layer(layout);
+}
+
+fn create_info_layout(core: &Arc<Core>) -> LinearLayout {
+    let mut info_layout = LinearLayout::horizontal();
+    let keys_content = core
+        .config
+        .my_keys
+        .iter()
+        .map(|key| format!("{}", key.private.display()))
+        .collect::<Vec<String>>()
+        .join("\n");
+    info_layout.add_child(ResizedView::with_full_width(
+        Panel::new(TextView::new(keys_content)).title("Your keys"),
+    ));
+    let contacts_content = core
+        .config
+        .contacts
+        .iter()
+        .map(|contact| contact.name.clone())
+        .collect::<Vec<String>>()
+        .join("\n");
+    info_layout.add_child(ResizedView::with_full_width(
+        Panel::new(TextView::new(contacts_content)).title("Contacts"),
+    ));
+    info_layout
 }
