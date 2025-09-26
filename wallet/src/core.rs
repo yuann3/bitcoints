@@ -15,8 +15,8 @@ use tracing::{debug, error, info};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Key {
-    public: PathBuf,
-    private: PathBuf,
+    pub public: PathBuf,
+    pub private: PathBuf,
 }
 
 #[derive(Clone)]
@@ -152,7 +152,7 @@ impl Core {
         Ok(())
     }
 
-    pub async fn send_transaction_async(&self, recipient: &str, amount: u64) -> Result<()> {
+    pub fn send_transaction_async(&self, recipient: &str, amount: u64) -> Result<()> {
         info!("Preparing to send {} to {}", amount, recipient);
         let recipient_key = self
             .config
@@ -162,13 +162,13 @@ impl Core {
             .ok_or_else(|| anyhow::anyhow!("Recipient not found"))?
             .load()?
             .key;
-        let transaction = self.create_transaction(&recipient_key, amount).await?;
+        let transaction = self.create_transaction(&recipient_key, amount)?;
         debug!("Sending transaction asynchronously");
         self.tx_sender.send(transaction)?;
         Ok(())
     }
 
-    pub async fn create_transaction(
+    pub fn create_transaction(
         &self,
         recipient: &PublicKey,
         amount: u64,

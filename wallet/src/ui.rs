@@ -151,7 +151,7 @@ fn setup_layout(siv: &mut Cursive, core: Arc<Core>, balance_content: TextContent
     let info_layout = create_info_layout(&core);
     let layout = LinearLayout::vertical()
         .child(instruction)
-        .child(balance_content)
+        .child(balance_panel)
         .child(info_layout);
     siv.add_layer(layout);
 }

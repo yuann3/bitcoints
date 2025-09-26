@@ -2,6 +2,7 @@ use anyhow::Result;
 use btclib::types::Transaction;
 use clap::{Parser, Subcommand};
 use core::{Config, Core, FeeConfig, FeeType, Recipient};
+use cursive::views::TextContent;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -20,36 +21,18 @@ mod util;
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
-    #[arg(short, long, value_name = "FILE")]
-    config: Option<PathBuf>,
-    #[arg(short, long, value_name = "ADDR")]
+    #[arg(short, long, value_name = "FILE", default_value_os_t = PathBuf::from("wallet_config.toml"))]
+    config: PathBuf,
+    #[arg(short, long, value_name = "ADDRESS")]
     node: Option<String>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
     GenerateConfig {
-        #[arg(short, long, value_name = "FILE")]
+        #[arg(short, long, value_name = "FILE", default_value_os_t = PathBuf::from("wallet_config.toml"))]
         output: PathBuf,
     },
-}
-
-async fn update_utxos(core: Arc<Core>) {
-    let mut interval = time::interval(Duration::from_secs(20));
-    loop {
-        interval.tick().await;
-        if let Err(e) = core.fetch_utxos().await {
-            eprintln!("Failed to updat UTXOs: {}", e);
-        }
-    }
-}
-
-async fn handle_transactions(rx: kanal::AsyncReceiver<Transaction>, core: Arc<Core>) {
-    while let Ok(transaction) = rx.recv().await {
-        if let Err(e) = core.send_transaction(transaction).await {
-            eprintln!("Failed to send transaction: {}", e);
-        }
-    }
 }
 
 async fn run_cli(core: Arc<Core>) -> Result<()> {
@@ -84,7 +67,7 @@ async fn run_cli(core: Arc<Core>) -> Result<()> {
                 if let Err(e) = core.fetch_utxos().await {
                     println!("failed to fetch utxos: {e}");
                 };
-                let transaction = core.create_transaction(&recipient_key, amount).await?;
+                let transaction = core.create_transaction(&recipient_key, amount)?;
                 core.tx_sender.send(transaction)?;
                 println!("Transaction sent successfully");
                 core.fetch_utxos().await?;
@@ -98,25 +81,38 @@ async fn run_cli(core: Arc<Core>) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    setup_tracing()?;
+    setup_panic_hook();
+    info!("Starting wallet application");
     let cli = Cli::parse();
     match &cli.command {
         Some(Commands::GenerateConfig { output }) => {
+            debug!("Generating dummy config at: {:?}", output);
             return generate_dummy_config(output);
         }
-        None => {}
+        None => (),
     }
-    let config_path = cli
-        .config
-        .unwrap_or_else(|| PathBuf::from("wallet_config.toml"));
-    let mut core = Core::load(config_path.clone()).await?;
+    info!("Loading config from: {:?}", cli.config);
+    let mut core = Core::load(cli.config.clone()).await?;
     if let Some(node) = cli.node {
+        info!("Overriding default node with: {}", node);
         core.config.default_node = node;
     }
     let (tx_sender, tx_receiver) = kanal::bounded(10);
     core.tx_sender = tx_sender;
     let core = Arc::new(core);
-    tokio::spawn(update_utxos(core.clone()));
-    tokio::spawn(handle_transactions(tx_receiver.clone_async(), core.clone()));
-    run_cli(core).await?;
+    info!("Starting background tasks");
+    let balance_content = TextContent::new(big_mode_btc(&core));
+    tokio::select! {
+    _ = ui_task(core.clone(), balance_content.clone()).await =>
+    (),
+    _ = update_utxos(core.clone()).await => (),
+    _ = handle_transactions(tx_receiver.clone_async(), core.
+    clone()).await
+    => (),
+    _ = update_balance(core.clone(), balance_content).await =>
+    (),
+    }
+    info!("Application shutting down");
     Ok(())
 }
