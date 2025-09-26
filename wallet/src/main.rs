@@ -1,3 +1,4 @@
+use crate::util::generate_dummy_config;
 use anyhow::Result;
 use btclib::types::Transaction;
 use clap::{Parser, Subcommand};
@@ -6,8 +7,12 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::time::{self, Duration};
+use tracing::*;
 
 mod core;
+mod task;
+mod ui;
+mod util;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -28,36 +33,11 @@ enum Commands {
     },
 }
 
-fn generate_dummy_config(path: &PathBuf) -> Result<()> {
-    let dummy_config = Config {
-        my_keys: vec![],
-        contacts: vec![
-            Recipient {
-                name: "Alice".to_string(),
-                key: PathBuf::from("alice.pub.pem"),
-            },
-            Recipient {
-                name: "Bob".to_string(),
-                key: PathBuf::from("bob.pub.pem"),
-            },
-        ],
-        default_node: "127.0.0.1:9000".to_string(),
-        fee_config: FeeConfig {
-            fee_type: FeeType::Percent,
-            value: 0.1,
-        },
-    };
-    let config_str = toml::to_string_pretty(&dummy_config)?;
-    std::fs::write(path, config_str)?;
-    println!("Dummy config generated at: {}", path.display());
-    Ok(())
-}
-
 async fn update_utxos(core: Arc<Core>) {
     let mut interval = time::interval(Duration::from_secs(20));
     loop {
         interval.tick().await;
-        if let Err(e) = core.fetch_utxos.await {
+        if let Err(e) = core.fetch_utxos().await {
             eprintln!("Failed to updat UTXOs: {}", e);
         }
     }
@@ -97,14 +77,14 @@ async fn run_cli(core: Arc<Core>) -> Result<()> {
                     .contacts
                     .iter()
                     .find(|r| r.name == recipient)
-                    .ok_or_else(anyhow::anyhow!("Recipient not found"))?
+                    .ok_or_else(|| anyhow::anyhow!("Recipient not found"))?
                     .load()?
                     .key;
                 if let Err(e) = core.fetch_utxos().await {
                     println!("failed to fetch utxos: {e}");
                 };
-                let transaction = core.creat_transaction(&recipient_key, amount).await?;
-                core.tx_sender.send(transaction).await?;
+                let transaction = core.create_transaction(&recipient_key, amount).await?;
+                core.tx_sender.send(transaction)?;
                 println!("Transaction sent successfully");
                 core.fetch_utxos().await?;
             }
@@ -127,12 +107,12 @@ async fn main() -> Result<()> {
     let config_path = cli
         .config
         .unwrap_or_else(|| PathBuf::from("wallet_config.toml"));
-    let mut core = Core::load(config_path.clone())?;
+    let mut core = Core::load(config_path.clone()).await?;
     if let Some(node) = cli.node {
         core.config.default_node = node;
     }
     let (tx_sender, tx_receiver) = kanal::bounded(10);
-    core.tx_sender = tx_sender.clone_async();
+    core.tx_sender = tx_sender;
     let core = Arc::new(core);
     tokio::spawn(update_utxos(core.clone()));
     tokio::spawn(handle_transactions(tx_receiver.clone_async(), core.clone()));

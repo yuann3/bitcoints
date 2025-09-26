@@ -4,12 +4,14 @@ use btclib::network::Message;
 use btclib::types::{Transaction, TransactionOutput};
 use btclib::util::Saveable;
 use crossbeam_skiplist::SkipMap;
-use kanal::AsyncSender;
+use kanal::Sender;
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::{fs, marker};
 use tokio::net::TcpStream;
+use tokio::sync::Mutex;
+use tracing::{debug, error, info};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Key {
@@ -88,37 +90,44 @@ impl UtxoStore {
 pub struct Core {
     pub config: Config,
     utxos: UtxoStore,
-    pub tx_sender: AsyncSender<Transaction>,
+    pub tx_sender: Sender<Transaction>,
+    pub stream: Arc<Mutex<TcpStream>>,
 }
 
 impl Core {
-    fn new(config: Config, utxos: UtxoStore) -> Self {
+    fn new(config: Config, utxos: UtxoStore, stream: TcpStream) -> Self {
         let (tx_sender, _) = kanal::bounded(10);
         Core {
             config,
             utxos,
-            tx_sender: tx_sender.clone_async(),
+            tx_sender,
+            stream: Arc::new(Mutex::new(stream)),
         }
     }
 
-    pub fn load(config_path: PathBuf) -> Result<Self> {
+    pub async fn load(config_path: PathBuf) -> Result<Self> {
         let config: Config = toml::from_str(&fs::read_to_string(&config_path)?)?;
         let mut utxos = UtxoStore::new();
+        let stream = TcpStream::connect(&config.default_node).await?;
 
         for key in &config.my_keys {
             let public = PublicKey::load_from_file(&key.public)?;
             let private = PrivateKey::load_from_file(&key.private)?;
             utxos.add_key(LoadedKey { public, private });
         }
-        Ok(Core::new(config, utxos))
+        Ok(Core::new(config, utxos, stream))
     }
 
     pub async fn fetch_utxos(&self) -> Result<()> {
-        let mut stream = TcpStream::connect(&self.config.default_node).await?;
+        debug!("Fetching UTXOs from node: {}", self.config.default_node);
         for key in &self.utxos.my_keys {
             let message = Message::FetchUTXOs(key.public.clone());
-            message.send_async(&mut stream).await?;
-            if let Message::UTXOs(utxos) = Message::receive_async(&mut stream).await? {
+            message.send_async(&mut *self.stream.lock().await).await?;
+            if let Message::UTXOs(utxos) =
+                Message::receive_async(&mut *self.stream.lock().await).await?
+            {
+                debug!("Received {} UTXOs for key: {:?}", utxos.len(), key.public);
+                // Replace the entire UTXO set for this key
                 self.utxos.utxos.insert(
                     key.public.clone(),
                     utxos
@@ -127,16 +136,35 @@ impl Core {
                         .collect(),
                 );
             } else {
+                error!("Unexpected response from node");
                 return Err(anyhow::anyhow!("Unexpected response from node"));
             }
         }
+        info!("UTXOs fetched successfully");
         Ok(())
     }
 
     pub async fn send_transaction(&self, transaction: Transaction) -> Result<()> {
-        let mut stream = TcpStream::connect(&self.config.default_node).await?;
+        debug!("Sending transaction to node: {}", self.config.default_node);
         let message = Message::SubmitTransaction(transaction);
-        message.send_async(&mut stream).await?;
+        message.send_async(&mut *self.stream.lock().await).await?;
+        info!("Transaction sent successfully");
+        Ok(())
+    }
+
+    pub async fn send_transaction_async(&self, recipient: &str, amount: u64) -> Result<()> {
+        info!("Preparing to send {} to {}", amount, recipient);
+        let recipient_key = self
+            .config
+            .contacts
+            .iter()
+            .find(|r| r.name == recipient)
+            .ok_or_else(|| anyhow::anyhow!("Recipient not found"))?
+            .load()?
+            .key;
+        let transaction = self.create_transaction(&recipient_key, amount).await?;
+        debug!("Sending transaction asynchronously");
+        self.tx_sender.send(transaction)?;
         Ok(())
     }
 
