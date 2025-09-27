@@ -4,41 +4,60 @@ A simplified Bitcoin implementation in Rust
 
 ## Overview
 
-This Cargo workspace contains four components: a core Bitcoin library (`btclib`), and stub implementations for miner, node, and wallet functionality.
+This Cargo workspace contains four components: a core Bitcoin library (`btclib`), and implementations for a miner, node, and wallet.
 
 The core library implements basic blockchain functionality including ECDSA cryptography with secp256k1, SHA-256 hashing, UTXO tracking, transaction validation, proof-of-work mining, and a mempool with fee prioritization. Blocks and transactions use CBOR serialization for persistence.
 
 ## Usage
 
-```bash
-cargo build    # Build workspace
-cargo test     # Run tests
-```
+### First-Time Setup
 
-## Progress
+Before running the system, you need to generate cryptographic keys and a wallet configuration file.
 
-**Completed (btclib)**
-- [x] Blockchain structure with blocks and headers
-- [x] Transaction system with inputs/outputs
-- [x] ECDSA cryptography (secp256k1)
-- [x] SHA-256 hashing and Merkle trees
-- [x] UTXO tracking and validation
-- [x] Proof-of-work mining algorithm
-- [x] Mempool with fee prioritization
-- [x] Difficulty adjustment mechanism
-- [x] CBOR serialization/persistence
+1.  **Generate Keys and Config:**
+    Run the following commands in your terminal to create two key pairs (`alice` and `bob`) and a default `wallet_config.toml`.
 
-**WIP**
-- [ ] Mining loop implementation
-- [ ] P2P networking protocol
-- [ ] Wallet key management
-- [ ] CLI interfaces
+    ```sh
+    # Generate keys
+    cargo run --bin key_gen alice
+    cargo run --bin key_gen bob
 
-**Future**
-- [ ] Network consensus
-- [ ] wallet 
-- [ ] Performance optimizations
+    # Generate default wallet config
+    cargo run --bin wallet -- generate-config
+    ```
 
-**Reference**
+2.  **Edit `wallet_config.toml`:**
+    Open the generated `wallet_config.toml` and add one of the key pairs to the `my_keys` section to assign ownership to your wallet.
 
-Building Bitcoin in Rust: Learn Rust Programming and the Fundamentals of Bitcoin - Lukas Hozda
+    ```toml
+    # Tell the wallet that the "alice" keys belong to us
+    my_keys = [
+      { public = "alice.pub.pem", private = "alice.priv.cbor" },
+    ]
+    ```
+
+### Running the System
+
+Run each component in a **separate terminal window** from the project's root directory.
+
+1.  **Start the Node:**
+
+    ```sh
+    cargo run --bin node
+    ```
+
+2.  **Start the Miner:**
+    Connect the miner to the node and assign a public key to receive block rewards.
+
+    ```sh
+    cargo run --bin miner -- --address 127.0.0.1:9000 --public-key-file alice.pub.pem
+    ```
+
+3.  **Start the Wallet:**
+    The wallet will load your config and connect to the node.
+
+    ```sh
+    cargo run --bin wallet
+    ```
+
+    The TUI will appear and your balance will update as the miner finds blocks. Press `Esc` to access the menu to send funds or quit.
